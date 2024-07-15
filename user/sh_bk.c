@@ -3,8 +3,6 @@
 #include "kernel/types.h"
 #include "user/user.h"
 #include "kernel/fcntl.h"
-#include "kernel/stat.h"
-#include "kernel/fs.h"
 
 // Parsed command representation
 #define EXEC  1
@@ -132,171 +130,22 @@ runcmd(struct cmd *cmd)
   exit(0);
 }
 
-// 一个词内可以是字母/数字/./-/_
-int is_valid_char(char c) {
-  if ((c>='a' && c<='z') ||
-      (c>='A' && c<='Z') ||
-      (c>='0' && c<='9') ||
-      (c=='.') ||(c=='-')||(c=='_')) {
-    return 1;
-  }
-  return 0;
-}
-
-// 找到当前输入一半词的开头
-char* find_last_word(char* cmdbuf) {
-  char* p = cmdbuf + strlen(cmdbuf) - 1;
-  while (is_valid_char(*p) && p!=cmdbuf-1) {
-    p--;
-  }
-  p++;
-  return p;
-}
-
-// 从当前目录下“文件”，匹配输入一半的某个词
-int tab_completion(char* cmdbuf) {
-  // 找到与上一个词的分隔处
-  char* last_word = find_last_word(cmdbuf);
-  
-  // 参考user/find.c
-  char buf[512], *p;
-  const char* path = ".";
-  int fd;
-  struct dirent de;
-  struct stat st;
-
-  if ((fd = open(path, 0)) < 0) {
-    fprintf(2, "Error: cannot open %s\n", path);
-    return 0;
-  }
-  if (fstat(fd, &st) < 0) {
-    fprintf(2, "Error: cannot stat %s\n", path);
-    close(fd);
-    return 0;
-  }
-  int idx = 0;
-  switch(st.type) {
-  case T_DIR:
-    if(strlen(path) + 1 + DIRSIZ + 1 > sizeof(buf)){
-      fprintf(1, "Usage: path too long\n");
-      break;
-    }
-    strcpy(buf, path);
-    p = buf + strlen(buf);
-    *p++ = '/';
-    // 该目录下的所有条目de(s)
-    while(read(fd, &de, sizeof(de)) == sizeof(de)){
-      if(de.inum == 0) //特殊de
-        continue;
-      memmove(p, de.name, DIRSIZ);
-      p[DIRSIZ] = 0;
-      if(stat(buf, &st) < 0){ //buf里的path有误
-        fprintf(2, "Error: cannot stat %s\n", buf);
-        continue;
-      }
-      // 除了'.'和'..'，比较“文件”名last_word_是否含有last_word
-      if (strcmp(de.name, ".")!=0 && strcmp(de.name, "..")!=0) {
-        char* last_word_ = find_last_word(buf);
-	if (memcmp(last_word_, last_word, strlen(last_word)) == 0) {
-	  idx = strlen(last_word_) - strlen(last_word);
-	  strcpy(last_word, last_word_);
-	  break;
-	}
-      }
-    }
-    break;
-  }
-  close(fd);
-  return idx;
-}
-
-// 全局变量=-1表示sh命令从stdin读取
-int script_fd = -1;
-
 int
-get_oneline_of_cmd(char* buf, int nbuf) {
-  // 如果不是从.sh脚本读取的命令才打印'$'
-  if (script_fd == -1) {
-    fprintf(2, "$ "); //用stderr而不是stdout：不要缓冲，立刻输出
-  }
-  /* 改自ulib.c的gets(buf, nbuf)函数:
-   * 从stdin向buf最多读取nbuf个Byte，
-   * 遇到'\n'结束，并将'\n'换成'\0'存入buf */
+getcmd(char *buf, int nbuf)
+{
+  fprintf(2, "$ ");
   memset(buf, 0, nbuf);
-  int cc; char c;
-  int i;
-  for (i=0; i+1<nbuf; ) {
-    // 从stdin/.sh读取
-    if (script_fd == -1) {
-      cc = read(0, &c, 1);
-    }
-    else {
-      cc = read(script_fd, &c, 1);
-    }
-    if (cc < 1) {
-      break;
-    }
-
-    // Tab键匹配功能
-    if (c == '\t') {
-      i += tab_completion(buf);
-     
-      if (fork() == 0) {
-        fprintf(2, "\ntab匹配到，此时buf=%s\n", buf);
-        exit(0);	
-      }
-      else {
-        wait(0);
-      }
-
-    }
-    else {
-      buf[i++] = c;
-      if (c == '\n') {
-        break;
-      }
-    }
-  }
-  buf[i] = '\0';
-  if (buf[0] == 0) {
+  gets(buf, nbuf);
+  if(buf[0] == 0) // EOF
     return -1;
-  }
   return 0;
 }
 
-// 执行一条命令
-void process_one_cmd(char* buf) {
-  // 原来在main里面先验证cd放在这里
-  // cd必须在父进程里面，否则改变的是子进程目录
-  if (buf[0]=='c' && buf[1]=='d') {
-    buf[strlen(buf)-1] = 0;
-    if (chdir(buf+3) < 0) {
-      fprintf(2, "Error: cd %s failed\n", buf+3);
-    }
-    return;
-  }
-  // 当前进程的wait功能(即sleep)
-  if (memcmp(buf, "wait ", 5) == 0) {
-    sleep(atoi(buf+5));
-    return;
-  }
-  // 其他命令：子进程执行
-  if (fork() == 0) {
-    runcmd(parsecmd(buf));
-  }
-  wait(0);
-}
-
 int
-main(int argc, char* argv[])
+main(void)
 {
   static char buf[100];
   int fd;
-
-  // 从.sh读取命令到shell
-  if (argc >= 2) {
-    script_fd = open(argv[1], O_RDWR);
-  }
 
   // Ensure that three file descriptors are open.
   while((fd = open("console", O_RDWR)) >= 0){
@@ -305,22 +154,19 @@ main(int argc, char* argv[])
       break;
     }
   }
-  
-  // 从stdin/.sh读取一行命令
-  while(get_oneline_of_cmd(buf, sizeof(buf)) >= 0){
-    // ;一行多条命令功能
-    char* cmdstart = buf;
-    char* p = buf;
-    while (*p != '\0') {
-      if (*p == ';') {
-	*p = '\0';
-        process_one_cmd(cmdstart);
-	cmdstart = p + 1;
-      }
-      p++;
+
+  // Read and run input commands.
+  while(getcmd(buf, sizeof(buf)) >= 0){
+    if(buf[0] == 'c' && buf[1] == 'd' && buf[2] == ' '){
+      // Chdir must be called by the parent, not the child.
+      buf[strlen(buf)-1] = 0;  // chop \n
+      if(chdir(buf+3) < 0)
+        fprintf(2, "cannot cd %s\n", buf+3);
+      continue;
     }
-    // 一行一条命令/ 该行；后最后一条命令
-    process_one_cmd(cmdstart);
+    if(fork1() == 0)
+      runcmd(parsecmd(buf));
+    wait(0);
   }
   exit(0);
 }

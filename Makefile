@@ -143,7 +143,7 @@ UPROGS=\
 	$U/_ls\
 	$U/_mkdir\
 	$U/_rm\
-	$U/_sh\
+	$U/_sh_bk\
 	$U/_stressfs\
 	$U/_usertests\
 	$U/_grind\
@@ -154,7 +154,10 @@ UPROGS=\
 	$U/_primes\
 	$U/_find\
 	$U/_xargs\
-	$U/_demo\
+	$U/_uptime\
+	$U/_match\
+	$U/_findMatch\
+	$U/_sh\
 
 ifeq ($(LAB),syscall)
 UPROGS += \
