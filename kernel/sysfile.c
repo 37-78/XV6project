@@ -15,6 +15,7 @@
 #include "sleeplock.h"
 #include "file.h"
 #include "fcntl.h"
+#include "sysinfo.h"
 
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
@@ -113,6 +114,37 @@ sys_fstat(void)
   if(argfd(0, 0, &f) < 0 || argaddr(1, &st) < 0)
     return -1;
   return filestat(f, st);
+}
+
+// 参考
+// kernel/sysfile.c: uint64 sys_fstat(void);
+// user/user.h: int fstat(int fd, struct stat*);
+// 以及
+// kernel/file.c: filestat();
+// kernel/vm.c: copyout();
+// 完成
+// kernel/sysfile.c: uint64 sys_sysinfo(void);
+// user/user.h: int sysinfo(struct sysinfo*);
+uint64
+sys_sysinfo(void)
+{
+  // argaddr(0, &addr): addr = myproc()->trapframe->a0
+  // addr = 当前进程a0虚拟地址
+  // 必须是a0：因为sysinfo(&sinfo)输入参数sinfo=a0
+  uint64 addr;
+  if(argaddr(0, &addr) < 0)
+    return -1;
+  
+  // 获取当前：空闲内存的字节数，state字段不为UNUSED的进程数
+  struct sysinfo sinfo;
+  sinfo.freemem = count_free_mem();
+  sinfo.nproc = count_used_proc();
+
+  // 利用页表pagetable向虚拟地址addr对应的物理地址写入sinfo
+  if (copyout(myproc()->pagetable, addr, (char*)&sinfo, sizeof(sinfo)) < 0)
+    return -1;
+  
+  return 0;
 }
 
 // Create the path new as a link to the same inode as old.

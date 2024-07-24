@@ -1,5 +1,6 @@
 struct stat;
 struct rtcdate;
+struct sysinfo; //系统调用sysinfo()的输入参数
 
 // system calls
 int fork(void);
@@ -23,6 +24,8 @@ int getpid(void);
 char* sbrk(int);
 int sleep(int);
 int uptime(void);
+int trace(int); //user/trace.c里 系统调用接口trace()
+int sysinfo(struct sysinfo*); //user/sysinfotest.c里 系统调用接口sysinfo()，参考fstat()
 
 // ulib.c
 int stat(const char*, struct stat*);

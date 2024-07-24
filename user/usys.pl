@@ -36,3 +36,12 @@ entry("getpid");
 entry("sbrk");
 entry("sleep");
 entry("uptime");
+
+entry("trace"); # ADD entry("trace") in usys.pl
+# 在usys.S里面生成:
+# .global trace
+# trace:              #用户态跳板函数
+#  li a7, SYS_trace   #系统调用id存入a7寄存器
+#  ecall              #系统调用：跳到内核态统一系统调用处理函数syscall()
+#  ret
+entry("sysinfo"); # ADD entry("sysinfo") in usys.pl

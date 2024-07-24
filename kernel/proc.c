@@ -44,6 +44,24 @@ procinit(void)
   kvminithart();
 }
 
+// count_used_proc() = state字段不为UNUSED的进程数
+// proc[NPROC=64]在boot time就已经初始化
+uint64
+count_used_proc(void)
+{
+  // 遍历proc[NPROC=64]
+  uint64 cnt = 0;
+  for (struct proc *p = proc; p < &proc[NPROC]; p++) {
+    // 因为只读p->state，所以不用对p加锁
+    // acquire(&p->lock);
+      if (p->state != UNUSED) {
+        cnt++;
+      }
+    // release(&p->lock);
+  }
+  return cnt;
+}
+
 // Must be called with interrupts disabled,
 // to prevent race with process being moved
 // to a different CPU.
@@ -126,6 +144,8 @@ found:
   memset(&p->context, 0, sizeof(p->context));
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
+  
+  p->syscall_trace = 0; // 创建新子进程时，新建proc时，初始化syscall_trace
 
   return p;
 }
@@ -294,6 +314,8 @@ fork(void)
   pid = np->pid;
 
   np->state = RUNNABLE;
+  
+  np->syscall_trace = p->syscall_trace; // 子进程继承父进程的syscall_trace
 
   release(&np->lock);
 

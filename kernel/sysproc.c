@@ -95,3 +95,19 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+uint64
+sys_trace(void)
+{
+  int mask;
+  // 内核将sscratch寄存器设置为用户进程p->trapframe页面的首地址(物理地址)
+  // 然后通过p->trapframe->a0(参数),a7(系统调用id)传递数据
+  if (argint(0, &mask) < 0) {
+    return -1;
+  }
+
+  // 给进程struct proc内添加syscall_trace成员：
+  // 用于在每次系统调用的时候检查p->trapframe->a7是否存在p->syscall_trace内
+  myproc()->syscall_trace = mask;
+  return 0;
+}

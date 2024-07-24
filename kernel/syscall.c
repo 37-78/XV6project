@@ -6,6 +6,7 @@
 #include "proc.h"
 #include "syscall.h"
 #include "defs.h"
+#include "sysinfo.h"
 
 // Fetch the uint64 at addr from the current process.
 int
@@ -83,6 +84,33 @@ argstr(int n, char *buf, int max)
   return fetchstr(addr, buf, max);
 }
 
+// 为了syscall_trace打印系统调用名字
+const char *syscall_names[] = {
+[SYS_fork]    "fork",
+[SYS_exit]    "exit",
+[SYS_wait]    "wait",
+[SYS_pipe]    "pipe",
+[SYS_read]    "read",
+[SYS_kill]    "kill",
+[SYS_exec]    "exec",
+[SYS_fstat]   "fstat",
+[SYS_chdir]   "chdir",
+[SYS_dup]     "dup",
+[SYS_getpid]  "getpid",
+[SYS_sbrk]    "sbrk",
+[SYS_sleep]   "sleep",
+[SYS_uptime]  "uptime",
+[SYS_open]    "open",
+[SYS_write]   "write",
+[SYS_mknod]   "mknod",
+[SYS_unlink]  "unlink",
+[SYS_link]    "link",
+[SYS_mkdir]   "mkdir",
+[SYS_close]   "close",
+[SYS_trace]   "trace",
+[SYS_sysinfo] "sysinfo",
+};
+
 extern uint64 sys_chdir(void);
 extern uint64 sys_close(void);
 extern uint64 sys_dup(void);
@@ -104,6 +132,8 @@ extern uint64 sys_unlink(void);
 extern uint64 sys_wait(void);
 extern uint64 sys_write(void);
 extern uint64 sys_uptime(void);
+extern uint64 sys_trace(void); // ADD extern sys_trace()
+extern uint64 sys_sysinfo(void); // ADD extern sys_sysinfo()
 
 static uint64 (*syscalls[])(void) = {
 [SYS_fork]    sys_fork,
@@ -127,17 +157,26 @@ static uint64 (*syscalls[])(void) = {
 [SYS_link]    sys_link,
 [SYS_mkdir]   sys_mkdir,
 [SYS_close]   sys_close,
+[SYS_trace]   sys_trace, // ADD syscalls[SYS__trace]
+[SYS_sysinfo] sys_sysinfo, // ADD syscalls[SYS_sysinfo]
 };
 
 void
 syscall(void)
 {
   int num;
-  struct proc *p = myproc();
+  struct proc *p = myproc(); // 把当前cpu执行进程的proc取出 
 
   num = p->trapframe->a7;
   if(num > 0 && num < NELEM(syscalls) && syscalls[num]) {
-    p->trapframe->a0 = syscalls[num]();
+    // 根据a7寄存器中的系统调用id：syscalls[num]是不同的extern函数指针
+    // syscalls[num]()返回值存入a0寄存器(用于用户态系统调用的返回值)
+    p->trapframe->a0 = syscalls[num](); 
+
+    // 每次系统调用判断是否要被trace(通过num=mask掩码移位与)
+    if ((p->syscall_trace >> num) & 1) {
+      printf("%d: syscall %s -> %d\n", p->pid, syscall_names[num], p->trapframe->a0);
+    }
   } else {
     printf("%d %s: unknown sys call %d\n",
             p->pid, p->name, num);
